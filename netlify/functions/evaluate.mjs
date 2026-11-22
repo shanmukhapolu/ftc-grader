@@ -137,3 +137,12 @@ Evaluate the submission against the supplied rubric. Cite page/slide markers in 
     return Response.json({ error: "The model response was not valid JSON. Try the evaluation again." }, { status: 502 });
   }
 };
+
+export const config = {
+  rateLimit: {
+    action: "rate_limit",
+    aggregateBy: "ip",
+    windowSize: 60,
+    windowLimit: 5
+  }
+};

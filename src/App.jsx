@@ -57,7 +57,6 @@ export default function App() {
       if (!submissionText.trim() || !rubricText.trim()) {
         throw new Error("Text could not be extracted from one of the files.");
       }
-      setStatus("Sending extracted content to Ling 3.2 Flash...");
       const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
       if (!apiKey) {
         throw new Error("OpenRouter API key is missing. Add VITE_OPENROUTER_API_KEY to your local .env.local file, then rebuild and redeploy.");

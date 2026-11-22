@@ -14,7 +14,7 @@ AI-assisted engineering portfolio and presentation evaluation against competitio
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - A Firebase project with the Blaze (pay-as-you-go) plan enabled for Cloud Functions deployment. The model may be free, but Firebase Functions deployment requires billing enabled.
 - Firebase CLI: `npm install -g firebase-tools`
 - An OpenRouter API key

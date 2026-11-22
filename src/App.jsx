@@ -58,7 +58,7 @@ export default function App() {
         throw new Error("Text could not be extracted from one of the files.");
       }
       setStatus("Sending extracted content to Ling 3.2 Flash...");
-      const response = await fetch("/.netlify/functions/evaluate", {
+      const response = await fetch("/api/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

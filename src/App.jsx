@@ -58,20 +58,84 @@ export default function App() {
         throw new Error("Text could not be extracted from one of the files.");
       }
       setStatus("Sending extracted content to Ling 3.2 Flash...");
-      const response = await fetch("/api/evaluate", {
+      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+      if (!apiKey) {
+        throw new Error("OpenRouter API key is missing. Add VITE_OPENROUTER_API_KEY to your local .env.local file, then rebuild and redeploy.");
+      }
+
+      setStatus("Sending extracted content to Ling 3.2 Flash...");
+      const systemPrompt = `You are a rigorous engineering competition evaluator. Evaluate a team's submitted engineering portfolio or presentation ONLY against the supplied competition rules and judging rubric.
+
+Core rules:
+- Treat the supplied rubric and manual as the source of truth. Do not invent criteria, point values, rules, or requirements.
+- Distinguish missing evidence from weak evidence and from evidence that is present but unclear.
+- Do not assume a team performed work that is not documented.
+- Cite page or slide markers in evidence when available.
+- Do not penalize a team for requirements not present in the supplied rubric.
+- Use the rubric's actual scoring scale and weights. If no numeric scale is supplied, return null numeric scores and explain why.
+- Be specific, constructive, and technically grounded. Clearly label uncertainty.
+- This is an AI practice evaluation, not an official competition score.
+
+Return ONLY valid JSON with this shape:
+{
+  "overall": {"score": number|null, "maxScore": number|null, "percentage": number|null, "rating": "Strong"|"Competitive"|"Developing"|"Needs substantial work"|"Insufficient rubric information", "summary": "string"},
+  "criteria": [{"name":"criterion","score":number|null,"maxScore":number|null,"performanceLevel":"string","assessment":"string","evidence":[{"location":"page/slide or Unknown","description":"evidence"}],"gaps":["string"],"recommendations":["string"]}],
+  "strengths":["string"],
+  "priorityImprovements":[{"priority":"High"|"Medium"|"Low","change":"string","reason":"string","where":"string","rubricCriterion":"string"}],
+  "missingRequirements":[{"requirement":"string","sourceReference":"string","status":"Missing"|"Unclear"|"Partially demonstrated"}],
+  "questionsForTeam":["string"],
+  "limitations":["string"]
+}
+Do not calculate an overall score if the rubric does not provide enough information.`;
+
+      const userPrompt = `Competition: ${competition}
+
+OFFICIAL RUBRIC / MANUAL:
+---
+${rubricText}
+---
+
+TEAM SUBMISSION:
+---
+${submissionText}
+---
+
+Evaluate the submission against the supplied rubric. Cite page/slide markers where available. Return the required JSON only.`;
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "FTC Grader"
+        },
         body: JSON.stringify({
-          competitionName: competition,
-          submissionName: submission.name,
-          rubricName: rubric.name,
-          submissionText,
-          rubricText
+          model: "inclusionai/ling-3.2-flash:free",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          temperature: 0.2,
+          max_tokens: 6000,
+          response_format: { type: "json_object" }
         })
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || `Evaluation failed (${response.status}).`);
-      setResult(payload.evaluation);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || `OpenRouter request failed (${response.status}).`);
+      }
+      const raw = payload?.choices?.[0]?.message?.content;
+      if (typeof raw !== "string" || !raw.trim()) {
+        throw new Error("The model returned an empty response. Try again.");
+      }
+      let evaluation;
+      try {
+        evaluation = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+      } catch {
+        throw new Error("The model response was not valid JSON. Try the evaluation again.");
+      }
+      setResult(evaluation);
       setStatus("");
       setExpanded(0);
     } catch (err) {

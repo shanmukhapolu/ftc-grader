@@ -28,11 +28,14 @@ firebase login
 firebase use ftc-grader
 ```
 
-Create a local `.env.local` file in the project root:
+Create your local environment file in the project root:
 
-```text
-VITE_OPENROUTER_API_KEY=your_new_openrouter_api_key
+```powershell
+Copy-Item .env.example .env.local
+notepad .env.local
 ```
+
+Replace the placeholder with your newly generated OpenRouter key, then save the file.
 
 The file is ignored by Git. Do not commit it. **Important:** Vite embeds `VITE_*` variables into the public JavaScript bundle during build. This design intentionally sends the OpenRouter request directly from each visitor's browser, so anyone who can access the deployed site can extract the key. Use a dedicated key with no paid balance, set strict limits where available, and rotate it if usage becomes abnormal. Never reuse a personal or production key.
 

@@ -5,48 +5,97 @@ AI-assisted engineering portfolio and presentation evaluation against competitio
 ## Stack
 
 - React + Vite
+- Firebase Hosting for the frontend
+- Firebase Cloud Functions (Node.js 20) for secure server-side evaluation
+- Firebase Functions Secret Manager for the OpenRouter API key
 - PDF.js for selectable-text PDF extraction in the browser
 - JSZip for extracting text from PowerPoint files
-- Netlify Function for secure server-side OpenRouter requests
-- InclusionAI Ling 3.2 Flash free variant: `inclusionai/ling-3.2-flash:free`
+- OpenRouter model: `inclusionai/ling-3.2-flash:free`
 
-## Local setup
+## Requirements
 
-1. Install Node.js 20 or newer.
-2. Run `npm install`.
-3. Install the Netlify CLI: `npm install -g netlify-cli`.
-4. Create a local `.env` file with `OPENROUTER_API_KEY=your_rotated_key`.
-5. Run `netlify dev` and open the local URL shown by the CLI.
+- Node.js 22 or newer
+- A Firebase project with the Blaze (pay-as-you-go) plan enabled for Cloud Functions deployment. The model may be free, but Firebase Functions deployment requires billing enabled.
+- Firebase CLI: `npm install -g firebase-tools`
+- An OpenRouter API key
 
-The API key is read only by the Netlify Function. Do not use a `VITE_` prefix and do not put the key in React code.
+## Local setup (PowerShell)
+
+```powershell
+git clone https://github.com/shanmukhapolu/ftc-grader.git
+cd ftc-grader
+git checkout feature/ai-portfolio-evaluator
+npm install
+cd functions
+npm install
+cd ..
+npm install -g firebase-tools
+firebase login
+firebase use ftc-grader
+```
+
+Set the OpenRouter secret once:
+
+```powershell
+firebase functions:secrets:set OPENROUTER_API_KEY
+```
+
+When prompted, paste your newly generated OpenRouter key. Do not put it in the React app, a `VITE_` variable, or a committed file.
+
+For local function emulation, create `functions/.secret.local` with this single line:
+
+```text
+OPENROUTER_API_KEY=your_new_openrouter_key
+```
+
+The local secret file is ignored by Git. Start the emulators in one PowerShell window:
+
+```powershell
+npm run build
+firebase emulators:start --only hosting,functions
+```
+
+Open the local Hosting emulator URL printed by Firebase CLI (normally http://127.0.0.1:5000).
 
 ## Deploy
 
-1. Import this GitHub repository into Netlify.
-2. Set `OPENROUTER_API_KEY` in the Netlify site's environment variables. Enable the **Functions** scope.
-3. Deploy the site.
+From the repository root:
 
-Netlify build settings are in `netlify.toml`.
+```powershell
+npm run deploy
+```
 
-## Current MVP workflow
+Or deploy the pieces separately:
+
+```powershell
+npm run deploy:functions
+npm run deploy:hosting
+```
+
+Firebase Hosting rewrites `/api/evaluate` to the `evaluate` Cloud Function in `us-central1`. The React app calls the same relative path locally and in production.
+
+## Current workflow
 
 1. Upload a team submission (PDF, PPTX, TXT, or Markdown).
 2. Upload the official rubric/manual in one of those formats.
 3. The browser extracts selectable PDF text or PowerPoint slide text and preserves page/slide markers.
-4. The server-side function sends extracted text to OpenRouter using Ling 3.2 Flash.
+4. The Cloud Function sends extracted text to OpenRouter using Ling 3.2 Flash.
 5. The app displays a structured rubric evaluation, evidence, gaps, recommendations, strengths, and questions.
 
 ## Current limitations
 
-- Scanned/image-only PDFs are not OCR'd in this first version.
-- PPTX extraction currently reads slide text, not embedded images, charts, or speaker notes.
-- PDF extraction reads selectable text; it does not yet send page images for visual inspection.
-- Very large files are truncated to fit a single model request. Use reasonably sized submissions and rubrics.
-- AI scores are estimates for practice and are not official judging results. Confirm all findings against the source manual.
+- Scanned/image-only PDFs are not OCR'd.
+- PPTX extraction reads slide text, not embedded images, charts, or speaker notes.
+- PDF extraction reads selectable text; page images are not visually analyzed.
+- Very large files are truncated to fit a single model request.
+- The in-memory per-instance rate limit is a basic abuse deterrent, not a global quota; use Firebase App Check and/or Firebase Authentication before making the app broadly public.
+- AI scores are estimates for practice and are not official judging results. Confirm findings against the source manual.
 
 ## Security
 
-The OpenRouter key must be stored as a Netlify environment variable named `OPENROUTER_API_KEY`, with Functions scope. If a key is exposed, revoke it and create a replacement. Never commit API keys.
+The OpenRouter key is stored as a Firebase Functions secret named `OPENROUTER_API_KEY`. The browser never receives it. If a key is exposed, revoke it in OpenRouter and set a replacement with `firebase functions:secrets:set OPENROUTER_API_KEY`. Never commit secrets.
+
+The Firebase web configuration in `src/firebase.js` is public client configuration. Protect your Firebase resources with appropriate Security Rules; do not treat the Firebase web API key as a server secret.
 
 ## Evaluation integrity
 

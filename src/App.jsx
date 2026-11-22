@@ -62,7 +62,29 @@ export default function App() {
         throw new Error("OpenRouter API key is missing. Add VITE_OPENROUTER_API_KEY to your local .env.local file, then rebuild and redeploy.");
       }
 
-      setStatus("Sending extracted content to Ling 3.2 Flash...");
+      setStatus("Checking OpenRouter free-model quota...");
+      // This endpoint reports the daily free-model allowance without consuming a generation request.
+      // If the quota endpoint is temporarily unavailable, continue and let the completion request report its own status.
+      try {
+        const quotaResponse = await fetch("https://openrouter.ai/api/v1/key", {
+          headers: { "Authorization": `Bearer ${apiKey}` },
+          cache: "no-store"
+        });
+        if (quotaResponse.ok) {
+          const quotaPayload = await quotaResponse.json();
+          const quota = quotaPayload?.data?.free_model_daily_requests;
+          if (quota && Number(quota.remaining) <= 0) {
+            throw new Error(
+              `The shared OpenRouter free-model daily quota is exhausted (${quota.used}/${quota.limit} requests used). It resets at 00:00 UTC. Because everyone uses the same API key, all users share this allowance. No evaluation request was sent.`
+            );
+          }
+        }
+      } catch (quotaError) {
+        if (quotaError.message?.includes("shared OpenRouter free-model daily quota")) throw quotaError;
+        console.warn("Could not pre-check OpenRouter quota; continuing with the evaluation request.", quotaError);
+      }
+
+      setStatus("Sending extracted content to Ling 3.2 Flash (with a free-model fallback)...");
       const systemPrompt = `You are a rigorous engineering competition evaluator. Evaluate a team's submitted engineering portfolio or presentation ONLY against the supplied competition rules and judging rubric.
 
 Core rules:
@@ -110,7 +132,7 @@ Evaluate the submission against the supplied rubric. Cite page/slide markers whe
           "X-Title": "FTC Grader"
         },
         body: JSON.stringify({
-          model: "inclusionai/ling-3.2-flash:free",
+          models: ["inclusionai/ling-3.2-flash:free", "openrouter/free"],
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -122,7 +144,30 @@ Evaluate the submission against the supplied rubric. Cite page/slide markers whe
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error?.message || `OpenRouter request failed (${response.status}).`);
+        const providerError = payload?.error || {};
+        const providerMessage = providerError.message || `OpenRouter request failed (${response.status}).`;
+        const providerCode = providerError.metadata?.provider_code;
+        const retryAfter = response.headers.get("retry-after");
+        const resetAt = response.headers.get("x-ratelimit-reset");
+
+        if (response.status === 429) {
+          if (providerCode) {
+            throw new Error(
+              `The model provider is temporarily rate-limiting or overloaded. OpenRouter tried its available fallback routes, but none completed the request. Wait a minute and try again. Provider detail: ${providerMessage}`
+            );
+          }
+
+          const waitHint = retryAfter
+            ? ` Retry after ${retryAfter} seconds.`
+            : resetAt
+              ? ` The reported rate-limit reset is ${new Date(Number(resetAt)).toLocaleString()}.`
+              : " Wait a minute before trying again.";
+          throw new Error(
+            `OpenRouter rate limit reached. This app uses one shared free-model API key, so every user consumes the same allowance. Free models are limited to 20 requests per minute and, for accounts that have not purchased credits, 50 requests per day. Failed attempts can also count toward the daily allowance.${waitHint} If the daily allowance is exhausted, wait until 00:00 UTC for it to reset. Provider response: ${providerMessage}`
+          );
+        }
+
+        throw new Error(providerMessage);
       }
       const raw = payload?.choices?.[0]?.message?.content;
       if (typeof raw !== "string" || !raw.trim()) {
